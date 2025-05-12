@@ -5,7 +5,10 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.prompts import base
 import asyncssh
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
 # Initialize MCP server
 mcp = FastMCP("Local Server Monitor")
 
@@ -32,9 +35,15 @@ async def ping_server(address: str) -> str:
     
 
 @mcp.tool()
-async def connect_ssh(host: str, username: str, password: str) -> str:
+async def connect_ssh(host: str) -> str:
     """Connect to a server via SSH and store the session globally"""
     global ssh_session
+    username = os.getenv("USERNAME")
+    password = os.getenv("PASSWORD")
+
+    print(username, password)
+    if not username or not password:
+        return "Error: USERNAME and PASSWORD environment variables must be set."
     try:
         ssh_session = await asyncssh.connect(host, username=username, password=password)
         return f"SSH connection to {host} established successfully."
