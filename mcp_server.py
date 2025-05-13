@@ -6,11 +6,15 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.prompts import base
 import asyncssh
 from dotenv import load_dotenv
-import os
+import os, sys
+import asyncio
 
 load_dotenv()
 
-print("DEBUG ENV:", os.getenv("USERNAME"), os.getenv("PASSWORD"))
+# print("DEBUG ENV:", os.getenv("USERNAME"), os.getenv("PASSWORD"))
+
+print("ENV DEBUG:", os.getenv("USERNAME"), os.getenv("PASSWORD"), os.getenv("PORT"), file=sys.stderr)
+
 
 # Initialize MCP server
 mcp = FastMCP("Local Server Monitor")
@@ -49,30 +53,33 @@ async def run_ssh_command(command: str) -> str:
     
 @mcp.tool()
 async def connect_ssh(host: str) -> str:
-    """Connect to a server via SSH and store the session globally"""
+    """Connect to a server via SSH and store the session globally. Optionally specify a port (default 22)."""
     global ssh_session
     username = os.getenv("USERNAME")
     password = os.getenv("PASSWORD")
-
-    print(f"[DEBUG] Trying SSH to {host} as {username}...")
+    port = 1444
 
     if not username or not password:
         return "Error: USERNAME and PASSWORD must be set in environment."
 
     try:
-        ssh_session = await asyncssh.connect(
+        ssh_session = await asyncio.wait_for(
+        asyncssh.connect(
             host,
+            port=port,
             username=username,
             password=password,
-            known_hosts=None  # disable known_hosts checking (optional for dev)
-        )
-        return f"SSH connection to {host} established successfully."
+            known_hosts=None
+        ),
+        timeout=10
+    )
+        return f"SSH connection to {host}:{port} established successfully."
     except asyncssh.PermissionDenied:
         ssh_session = None
-        return f"Permission denied for {username}@{host}. Check credentials."
+        return f"Permission denied for {username}@{host}:{port}. Check credentials."
     except asyncssh.ConnectionLost:
         ssh_session = None
-        return f"Lost connection to {host}. Is the SSH service running?"
+        return f"Lost connection to {host}:{port}. Is the SSH service running?"
     except asyncssh.Error as e:
         ssh_session = None
         return f"SSH error: {str(e)}"
@@ -145,6 +152,22 @@ def list_directory_prompt(path: str = ".") -> str:
 @mcp.prompt()
 def find_file_prompt(filename: str) -> str:
     return f"Find all files named {filename} starting from the root directory."
+
+
+@mcp.tool()
+async def disconnect_ssh() -> str:
+    """Disconnect the current SSH session, if any."""
+    global ssh_session
+    if ssh_session is not None:
+        try:
+            ssh_session.close()
+            await ssh_session.wait_closed()
+            ssh_session = None
+            return "SSH session disconnected successfully."
+        except Exception as e:
+            return f"Error disconnecting SSH session: {str(e)}"
+    else:
+        return "No SSH session to disconnect."
 
 
 if __name__ == "__main__":
